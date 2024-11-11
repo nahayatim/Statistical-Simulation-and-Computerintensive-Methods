@@ -1,0 +1,110 @@
+---
+title: "Monte Carlo Simulation of areas"
+author: "Mahtab Nahayati"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Monte Carlo Integration for \( \int_1^b e^{-x^3} \, dx \)
+
+### Step 1: Approximate the Integral for \( b = 6 \) Using Monte Carlo Integration
+
+1. **Define the Function**: The function we want to integrate is 
+  $$
+   f(x) = e^{-x^3}
+   $$
+   over the interval \([1, b]\) with \( b = 6 \).
+   
+2. **Generate Uniformly Distributed Random Variables**: We generate a set of random variables \( x_i \) uniformly distributed between 1 and 6. We choose a large number of samples, say \( N = 10,000 \), to get a good approximation.
+
+3. **Calculate the Monte Carlo Estimate**:
+
+   Using Monte Carlo integration, we can approximate the integral as follows:
+
+   $$
+   \int_1^6 e^{-x^3} \, dx \approx \frac{b - a}{N} \sum_{i=1}^N f(x_i)
+   $$
+
+   where \( a = 1 \) and \( b = 6 \), and \( x_i \) are our uniformly distributed samples over \([1, 6]\).
+
+```{r}
+ # Define parameters
+   N <- 10000
+   a <- 1
+   b <- 6
+
+   # Generate random samples and evaluate the function at these points
+   x <- runif(N, min = a, max = b)
+   f_x <- exp(-x^3)
+
+   # Monte Carlo estimate of the integral
+   integral_approx <- (b - a) * mean(f_x)
+   integral_approx
+
+```
+4. **Comparison Using Exact Integration:** To verify the accuracy of our Monte Carlo approximation, we compare it to the exact integral using R's integrate function:
+
+```{r}
+# Compute the exact integral
+exact_result <- integrate(function(x) exp(-x^3), lower = 1, upper = 6)
+exact_result$value
+
+```
+### Step 2: Approximate the Integral for \( b = \infty \) Using Monte Carlo Integration
+
+1. **Define the Function**: The function we want to integrate is:
+   \[
+   f(x) = e^{-x^3}
+   \]
+   over the interval \([1, \infty)\).
+
+2. **Choose a Suitable Density**: Since our integration range is \([1, \infty)\), we choose an exponential distribution with support \([0, \infty)\) and shift it by 1. Let \( X = 1 + Y \) where \( Y \sim \text{Exponential}(\lambda = 1)\). Then we approximate the integral as:
+   \[
+   \int_1^{\infty} e^{-x^3} \, dx \approx \frac{1}{N} \sum_{i=1}^N \frac{e^{-(1 + y_i)^3}}{\lambda e^{-\lambda y_i}}.
+   \]
+   
+```{r}
+# Define parameters
+N <- 10000
+lambda <- 1
+
+# Generate random samples from the exponential distribution
+y <- rexp(N, rate = lambda)
+
+# Calculate the Monte Carlo estimate
+integral_approx_infinity <- mean(exp(-(1 + y)^3) / (lambda * exp(-lambda * y)))
+integral_approx_infinity
+```
+   
+**Comparison Using Exact Integration**: To verify the accuracy of our Monte Carlo approximation, we use R's integrate function to compute the integral with an upper limit of infinity:
+
+```{r}
+# Define the function
+f <- function(x) exp(-x^3)
+
+# Compute the exact integral from 1 to infinity
+exact_result_infinity <- integrate(f, lower = 1, upper = Inf)
+exact_result_infinity$value
+
+```
+### step 3: Why Monte Carlo integration works better in step 2 that step 1?
+
+In step 1, the Monte Carlo integration used a **uniform distribution** over \([1, 6]\) for the integral
+
+\[
+\int_1^6 e^{-x^3} \, dx.
+\]
+
+Since \( e^{-x^3} \) decreases rapidly as \( x \) increases, most of the integral’s value comes from \( x \) near 1. The uniform distribution samples points evenly across the entire interval, including regions where the function is very small, leading to a less accurate estimate.
+
+In step 2, we used an **exponential distribution** shifted to \([1, \infty)\) for
+
+\[
+\int_1^{\infty} e^{-x^3} \, dx.
+\]
+
+This distribution places more samples near \( x = 1 \), where \( e^{-x^3} \) is largest, reducing variance and improving accuracy. This alignment between the sampling density and the function's decay results in a closer match with the `integrate` function’s result.
