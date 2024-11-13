@@ -5,6 +5,10 @@ date: "`r Sys.Date()`"
 output: pdf_document
 ---
 
+\newpage 
+\tableofcontents 
+\newpage
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -108,3 +112,169 @@ In step 2, we used an **exponential distribution** shifted to \([1, \infty)\) fo
 \]
 
 This distribution places more samples near \( x = 1 \), where \( e^{-x^3} \) is largest, reducing variance and improving accuracy. This alignment between the sampling density and the function's decay results in a closer match with the `integrate` function’s result.
+
+## Monte Carlo Area Calculation for Polar Function with Visualization
+
+### Step 1: Define and plot the Function \( r(t) \) in Cartesian Coordinates
+
+The function is given by:
+\[
+r(t) = \left( \exp(\cos(t)) - 2 \cdot \cos(4 \cdot t) - \sin(t / 12)^5 \right)
+\]
+
+We convert this polar function into Cartesian coordinates for plotting:
+\[
+x(t) = r(t) \cdot \cos(t)
+\]
+\[
+y(t) = r(t) \cdot \sin(t)
+\]
+
+```{r}
+# Define r(t)
+r <- function(t) {
+  exp(cos(t)) - 2 * cos(4 * t) - (sin(t / 12)^5)
+}
+
+# Generate t values and calculate corresponding x and y coordinates
+t <- seq(by = 0.01, from = -pi, to = pi)
+x <- r(t) * cos(t)
+y <- r(t) * sin(t)
+
+ #Plot the area enclosed by the function.
+ library(ggplot2)
+ ggplot()+
+ geom_path(aes(x=x,y=y))
+
+```
+
+### Step 2: Generate Uniform Random Coordinates
+
+Generate uniform random coordinates within the rectangle \([-2, 3.5] \times [-3, 3]\) and determine if each point lies within the area enclosed by the function \( r(t) = \left( \exp(\cos(t)) - 2 \cdot \cos(4 \cdot t) - \sin(t / 12)^5 \right) \) for \( t \in [-\pi, \pi] \), using polar coordinates with:
+\[
+x = r(t) \cdot \cos(t) \quad \text{and} \quad y = r(t) \cdot \sin(t)
+\]
+An indicator function will mark whether each random point lies inside or outside the region.
+
+
+```{r}
+
+#generate random coordinates
+ n <- 100000
+ xs = runif(n, -2, 3.5)
+ ys = runif(n, -3, 3)
+ 
+ #check if it lies within the defined area
+ 
+ inside_func <-function(x,y){
+   beta <- atan2(y,x)
+   rad <- sqrt(x^2 + y^2)
+   
+   r_beta <- r(beta)
+   r_beta_pi <- r(beta + pi)
+  
+  return((r_beta > 0 & rad < abs(r_beta)) ||(r_beta_pi< 0& rad <abs(r_beta_pi))) 
+  
+ }
+ 
+ # Indicator function for each point
+ 
+ ind <- logical(n)
+ for (i in 1:n){
+   ind[i] <- inside_func(xs[i], ys[i])
+ }
+ 
+ df <- data.frame(xs, ys, ind)
+ 
+ # Plotting using ggplot2
+library(ggplot2)
+ggplot() +
+  geom_point(data = df, aes(x = xs, y = ys, color = ind), size = 0.1) +
+  geom_path(aes(x = x, y = y), color = "blue", size = 1) +
+  ggtitle("Monte Carlo Simulation of r(t)") +
+  xlab("X") +
+  ylab("Y")
+
+```
+
+### Step 3: Estimation and Visualization
+
+Now we are going to simulate 100, 1000, 10000 and 100000 random coordiantes and calculate the percentage of the points within the enclosed area. And base on this information we want to estimate the area of the figure.
+
+```{r}
+# Define r(t)
+r <- function(t) { 
+  exp(cos(t)) - 2 * cos(4 * t) - sin(t / 12)^5
+}
+
+# Bounding box limits
+x_min <- -2
+x_max <- 3.5
+y_min <- -3
+y_max <- 3
+
+# Bounding box area
+bounding_box_area <- (x_max - x_min) * (y_max - y_min)
+
+# Initialize the vector to store area estimations for each sample size
+estimator <- numeric(4)
+
+# Function to determine if a point lies within the defined area
+inside_func <- function(x, y) {
+  beta <- atan2(y, x)
+  rad <- sqrt(x^2 + y^2)
+  
+  r_beta <- r(beta)
+  r_beta_pi <- r(beta + pi)
+  
+  return((r_beta > 0 & rad < abs(r_beta)) || (r_beta_pi < 0 & rad < abs(r_beta_pi))) 
+}
+
+# Loop over different sample sizes (10^2, 10^3, 10^4, and 10^5)
+for (i in 2:5) {
+  n <- 10^i     # Sample size
+  xs <- runif(n, min = x_min, max = x_max)  # Random x-coordinates
+  ys <- runif(n, min = y_min, max = y_max)  # Random y-coordinates
+  
+  # Indicator for points within the enclosed area
+  ind <- numeric(n)
+  for (j in 1:n) {
+    ind[j] <- inside_func(xs[j], ys[j])
+  }
+  
+  # Calculate the percentage of points inside and the estimated area
+  percentage_inside <- mean(ind)
+  estimated_area <- percentage_inside * bounding_box_area
+  estimator[i - 1] <- estimated_area
+  
+  # Print the percentage and estimated area for the current sample size
+  print(paste("Sample size:", n, 
+              "- Percentage Inside:", round(percentage_inside * 100, 2), 
+              "% - Estimated Area:", round(estimated_area, 4)))
+  
+  # Create a ggplot for the current sample size, showing points inside/outside the area
+  df <- data.frame(xs = xs, ys = ys, ind = ind)
+  p <- ggplot() +
+    geom_point(data = df, aes(x = xs, y = ys, color = factor(ind)), size = 0.1) +
+    scale_color_manual(values = c("0" = "orange", "1" = "blue"), labels = c("Outside", "Inside")) +
+    ggtitle(paste("Monte Carlo Simulation with n =", n)) +
+    xlab("X") +
+    ylab("Y") +
+    theme_minimal()
+  
+  # Print the plot for the current sample size
+  print(p)
+}
+
+# Summarize the results in a table
+results <- data.frame(Sample_Size = c(10^2, 10^3, 10^4, 10^5),
+                      Estimated_Area = estimator)
+
+print(results)
+
+
+```
+
+### Step 4: Functionality of Monto Carlo Simulation
+
+Monte Carlo is a powerful statistical technique that leverage random sampling to estimate mathematical functions or model that might be difficult or impossible to compute directly.In this exercise, the Monte Carlo simulation estimates the area enclosed by the curve by generating random points within a defined bounding box. We check if each point falls inside the region defined by \( r(t) \). The proportion of points inside the shape compared to the total points gives an estimate of the area’s percentage of the bounding box. By multiplying this percentage by the area of the bounding box, we approximate the enclosed area. More points generally improve accuracy, as seen with larger sample sizes in the simulations.
