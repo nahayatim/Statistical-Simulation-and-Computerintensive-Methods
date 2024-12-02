@@ -1,0 +1,443 @@
+---
+title: "CrossValidationOfModels"
+author: "Mahtab Nahayati"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+
+\newpage 
+\tableofcontents 
+\newpage
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Model Comparison and Validation for Predicting MPG Based on Horsepower
+
+We will work with the dataset Auto in the ISLR package. (Loading the dataset, exploring its structure, and fitting the required models and visualization)
+
+```{r}
+# Load necessary packages
+library(ISLR)  # For the Auto dataset
+library(ggplot2)  # For visualizations
+
+# Obtain information about the dataset
+?Auto  # Help page to understand the dataset structure and meaning of variables
+
+# Load the dataset
+data("Auto")
+
+# Check the structure of the dataset
+str(Auto)
+
+# Fit the models
+model1 <- lm(mpg ~ horsepower, data = Auto)  # Linear model
+model2 <- lm(mpg ~ poly(horsepower, 2), data = Auto)  # Polynomial of degree 2
+model3 <- lm(mpg ~ poly(horsepower, 3), data = Auto)  # Polynomial of degree 3
+
+# Visualize the models with the data
+ggplot(Auto, aes(x = horsepower, y = mpg)) +
+  geom_point(color = "black", alpha = 0.6, size = 2) +  # Scatterplot of the data with adjusted point size
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "red", size = 1.2, linetype = "solid") +  # Model 1
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = FALSE, color = "green", size = 1.2, linetype = "solid") +  # Model 2
+  geom_smooth(method = "lm", formula = y ~ poly(x, 3), se = FALSE, color = "purple", size = 1.2, linetype = "solid") +  # Model 3
+  labs(title = "Models Comparison: mpg vs horsepower",
+       x = "Horsepower",
+       y = "Miles Per Gallon (mpg)") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.title = element_text(size = 14),
+    legend.position = "bottom"
+  )
+
+
+```
+
+## validation set approach
+Use once a train/test split 50%/50% and once 70%/30%. Choosing the best model based on Root Mean Squared Error, Mean Squared Error and Median Absolute Deviation.
+
+```{r}
+# Set seed for reproducibility
+set.seed(123)
+
+# Function to calculate performance metrics
+calculate_metrics <- function(predictions, actual) {
+  mse <- mean((predictions - actual)^2)  # Mean Squared Error
+  rmse <- sqrt(mse)  # Root Mean Squared Error
+  mad <- median(abs(predictions - actual))  # Median Absolute Deviation
+  return(c(MSE = mse, RMSE = rmse, MAD = mad))
+}
+
+# Splitting data: 50% training, 50% testing
+n <- nrow(Auto)
+indices_50 <- sample(seq_len(n), size = n / 2)
+train_50 <- Auto[indices_50, ]
+test_50 <- Auto[-indices_50, ]
+
+# Splitting data: 70% training, 30% testing
+indices_70 <- sample(seq_len(n), size = 0.7 * n)
+train_70 <- Auto[indices_70, ]
+test_70 <- Auto[-indices_70, ]
+
+# Function to fit models and evaluate
+evaluate_models <- function(train, test) {
+  # Fit models
+  model1 <- lm(mpg ~ horsepower, data = train)
+  model2 <- lm(mpg ~ poly(horsepower, 2), data = train)
+  model3 <- lm(mpg ~ poly(horsepower, 3), data = train)
+  
+  # Predictions
+  pred1 <- predict(model1, newdata = test)
+  pred2 <- predict(model2, newdata = test)
+  pred3 <- predict(model3, newdata = test)
+  
+  # Calculate metrics
+  metrics1 <- calculate_metrics(pred1, test$mpg)
+  metrics2 <- calculate_metrics(pred2, test$mpg)
+  metrics3 <- calculate_metrics(pred3, test$mpg)
+  
+  # Combine results
+  metrics <- rbind(Linear = metrics1, Quadratic = metrics2, Cubic = metrics3)
+  return(metrics)
+}
+
+# Evaluate models for 50%/50% split
+metrics_50 <- evaluate_models(train_50, test_50)
+
+# Evaluate models for 70%/30% split
+metrics_70 <- evaluate_models(train_70, test_70)
+
+# Print results
+cat("Performance Metrics for 50%/50% Train/Test Split:\n")
+print(metrics_50)
+cat("\nPerformance Metrics for 70%/30% Train/Test Split:\n")
+print(metrics_70)
+
+```
+The quadratic model performs consistently well across both splits with lower MSE and RMSE compared to the linear model and slightly comparable to the cubic model.
+The cubic model offers marginal improvement in MAD in the 70%/30% split but has similar MSE and RMSE to the quadratic model.
+
+
+## Leave-One-Out(LOOCV), 5-Fold, and 10-Fold Cross-Validation
+Using cv.glm function in the boot package.
+
+```{r}
+# Load necessary package
+library(boot)  # For cv.glm function
+
+# Fit the models on the full dataset
+model1 <- glm(mpg ~ horsepower, data = Auto)
+model2 <- glm(mpg ~ poly(horsepower, 2), data = Auto)
+model3 <- glm(mpg ~ poly(horsepower, 3), data = Auto)
+
+# Function to compute cross-validation errors
+cv_errors <- function(model, folds) {
+  cv.glm(data = Auto, glmfit = model, K = folds)$delta[1]  # Extract cross-validation error
+}
+
+# Leave-One-Out Cross-Validation (LOOCV)
+loocv1 <- cv_errors(model1, folds = nrow(Auto))  # LOOCV for Linear model
+loocv2 <- cv_errors(model2, folds = nrow(Auto))  # LOOCV for Quadratic model
+loocv3 <- cv_errors(model3, folds = nrow(Auto))  # LOOCV for Cubic model
+
+# 5-Fold Cross-Validation
+cv5_1 <- cv_errors(model1, folds = 5)  # 5-Fold CV for Linear model
+cv5_2 <- cv_errors(model2, folds = 5)  # 5-Fold CV for Quadratic model
+cv5_3 <- cv_errors(model3, folds = 5)  # 5-Fold CV for Cubic model
+
+# 10-Fold Cross-Validation
+cv10_1 <- cv_errors(model1, folds = 10)  # 10-Fold CV for Linear model
+cv10_2 <- cv_errors(model2, folds = 10)  # 10-Fold CV for Quadratic model
+cv10_3 <- cv_errors(model3, folds = 10)  # 10-Fold CV for Cubic model
+
+# Combine results into a table
+cv_results <- data.frame(
+  Model = c("Linear", "Quadratic", "Cubic"),
+  LOOCV = c(loocv1, loocv2, loocv3),
+  CV5 = c(cv5_1, cv5_2, cv5_3),
+  CV10 = c(cv10_1, cv10_2, cv10_3)
+)
+
+# Print the results
+cat("Cross-Validation Results:\n")
+print(cv_results)
+
+```
+
+## Compare the result from Validation Set approach and Cross-validation
+
+```{r}
+# Results from validation set approach (Step 2)
+validation_results <- data.frame(
+  Model = c("Linear", "Quadratic", "Cubic"),
+  Split_50_50 = c(21.25, 16.48, 16.58),  # MSE for 50/50 split
+  Split_70_30 = c(24.21, 17.40, 17.40)   # MSE for 70/30 split
+)
+
+# Results from cross-validation (Step 3)
+cv_results <- data.frame(
+  Model = c("Linear", "Quadratic", "Cubic"),
+  LOOCV = c(24.23, 19.25, 19.33),
+  CV5 = c(24.33, 19.22, 19.47),
+  CV10 = c(24.37, 19.23, 19.29)
+)
+
+# Combine into a single table
+combined_results <- merge(validation_results, cv_results, by = "Model")
+
+# Print the combined results
+cat("Comparison of Validation and Cross-Validation Results:\n")
+print(combined_results)
+
+# Conclusions based on the results
+cat("\nConclusions:\n")
+cat("- Quadratic model consistently has the lowest errors across all methods.\n")
+cat("- Linear model has the highest errors, indicating underfitting.\n")
+cat("- Cubic model performs similarly to the quadratic model but adds unnecessary complexity.\n")
+
+```
+# Fitting the Specified models to the Economics dataset from ggplot2
+
+## Fitting Models
+
+
+```{r}
+# Load necessary packages
+library(ggplot2)
+
+# Load the dataset
+data("economics")
+
+# View the structure of the dataset
+str(economics)
+
+# Linear model: unemploy ~ uempmed
+linear_model <- lm(unemploy ~ uempmed, data = economics)
+
+# Linear model: uempmed ~ unemploy
+linear_model_reverse <- lm(uempmed ~ unemploy, data = economics)
+
+# Exponential model: Assuming 'uempmed' is independent and 'unemploy' is dependent
+exp_model <- lm(log(unemploy) ~ uempmed, data = economics)
+
+# Logarithmic model: Assuming 'unemploy' is independent and 'uempmed' is dependent
+log_model <- lm(uempmed ~ log(unemploy), data = economics)
+
+# Polynomial models for unemploy ~ uempmed
+poly2_model <- lm(unemploy ~ poly(uempmed, 2), data = economics)
+poly3_model <- lm(unemploy ~ poly(uempmed, 3), data = economics)
+poly10_model <- lm(unemploy ~ poly(uempmed, 10), data = economics)
+
+# Polynomial models for uempmed ~ unemploy
+poly2_model_reverse <- lm(uempmed ~ poly(unemploy, 2), data = economics)
+poly3_model_reverse <- lm(uempmed ~ poly(unemploy, 3), data = economics)
+poly10_model_reverse <- lm(uempmed ~ poly(unemploy, 10), data = economics)
+
+# Summarize the models
+cat("Summary of Linear Model (unemploy ~ uempmed):\n")
+summary(linear_model)
+
+cat("\nSummary of Linear Model (uempmed ~ unemploy):\n")
+summary(linear_model_reverse)
+
+cat("\nSummary of Exponential Model (log(unemploy) ~ uempmed):\n")
+summary(exp_model)
+
+cat("\nSummary of Logarithmic Model (uempmed ~ log(unemploy)):\n")
+summary(log_model)
+
+cat("\nPolynomial Models for unemploy ~ uempmed:\n")
+cat("Degree 2:\n")
+summary(poly2_model)
+
+cat("\nDegree 3:\n")
+summary(poly3_model)
+
+cat("\nDegree 10:\n")
+summary(poly10_model)
+
+cat("\nPolynomial Models for uempmed ~ unemploy:\n")
+cat("Degree 2:\n")
+summary(poly2_model_reverse)
+
+cat("\nDegree 3:\n")
+summary(poly3_model_reverse)
+
+cat("\nDegree 10:\n")
+summary(poly10_model_reverse)
+
+```
+## Plot the data
+
+```{r}
+library(ggplot2)
+
+# Plot for unemploy ~ uempmed
+plot1 <- ggplot(economics, aes(x = uempmed, y = unemploy)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Scatterplot
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "red", size = 1.2) +  # Linear model
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = FALSE, color = "green", size = 1.2, linetype = "solid") +  # Quadratic model
+  geom_smooth(method = "lm", formula = y ~ poly(x, 3), se = FALSE, color = "purple", size = 1.2, linetype = "solid") +  # Cubic model
+  labs(
+    title = "Models for Unemployment vs Median Unemployment Duration",
+    x = "Median Unemployment Duration (uempmed)",
+    y = "Number of Unemployed Persons (unemploy)"
+  ) +
+  theme_minimal()
+
+# Plot for uempmed ~ unemploy
+plot2 <- ggplot(economics, aes(x = unemploy, y = uempmed)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Scatterplot
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "red", size = 1.2) +  # Linear model
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = FALSE, color = "green", size = 1.2, linetype = "solid") +  # Quadratic model
+  geom_smooth(method = "lm", formula = y ~ poly(x, 3), se = FALSE, color = "purple", size = 1.2, linetype = "solid") +  # Cubic model
+  labs(
+    title = "Models for Median Unemployment Duration vs Number of Unemployed Persons",
+    x = "Number of Unemployed Persons (unemploy)",
+    y = "Median Unemployment Duration (uempmed)"
+  ) +
+  theme_minimal()
+
+# Display the plots
+print(plot1)
+print(plot2)
+
+```
+
+##L eave-One-Out(LOOCV), 5-Fold, and 10-Fold Cross-Validation
+Using cv.glm function in the boot package.
+
+```{r}
+# Load necessary library
+library(boot)
+
+# Function to calculate RMSE and MSE using cv.glm
+calculate_cv_errors <- function(model, data, folds) {
+  cv_result <- cv.glm(data = data, glmfit = model, K = folds)
+  mse <- cv_result$delta[1]  # Mean Squared Error
+  rmse <- sqrt(mse)  # Root Mean Squared Error
+  return(c(MSE = mse, RMSE = rmse))
+}
+
+# Linear models
+linear_model1 <- glm(unemploy ~ uempmed, data = economics)
+linear_model2 <- glm(uempmed ~ unemploy, data = economics)
+
+# Polynomial models for unemploy ~ uempmed
+poly2_model1 <- glm(unemploy ~ poly(uempmed, 2), data = economics)
+poly3_model1 <- glm(unemploy ~ poly(uempmed, 3), data = economics)
+
+# Polynomial models for uempmed ~ unemploy
+poly2_model2 <- glm(uempmed ~ poly(unemploy, 2), data = economics)
+poly3_model2 <- glm(uempmed ~ poly(unemploy, 3), data = economics)
+
+# Cross-validation for Leave-One-Out (LOOCV)
+loocv_results <- data.frame(
+  Model = c("Linear (unemploy ~ uempmed)", "Linear (uempmed ~ unemploy)",
+            "Poly2 (unemploy ~ uempmed)", "Poly3 (unemploy ~ uempmed)",
+            "Poly2 (uempmed ~ unemploy)", "Poly3 (uempmed ~ unemploy)"),
+  LOOCV_MSE = c(
+    calculate_cv_errors(linear_model1, economics, nrow(economics))[1],
+    calculate_cv_errors(linear_model2, economics, nrow(economics))[1],
+    calculate_cv_errors(poly2_model1, economics, nrow(economics))[1],
+    calculate_cv_errors(poly3_model1, economics, nrow(economics))[1],
+    calculate_cv_errors(poly2_model2, economics, nrow(economics))[1],
+    calculate_cv_errors(poly3_model2, economics, nrow(economics))[1]
+  ),
+  LOOCV_RMSE = c(
+    calculate_cv_errors(linear_model1, economics, nrow(economics))[2],
+    calculate_cv_errors(linear_model2, economics, nrow(economics))[2],
+    calculate_cv_errors(poly2_model1, economics, nrow(economics))[2],
+    calculate_cv_errors(poly3_model1, economics, nrow(economics))[2],
+    calculate_cv_errors(poly2_model2, economics, nrow(economics))[2],
+    calculate_cv_errors(poly3_model2, economics, nrow(economics))[2]
+  )
+)
+
+# Cross-validation for 5-Fold and 10-Fold
+folds_results <- data.frame(
+  Model = loocv_results$Model,
+  CV5_MSE = c(
+    calculate_cv_errors(linear_model1, economics, 5)[1],
+    calculate_cv_errors(linear_model2, economics, 5)[1],
+    calculate_cv_errors(poly2_model1, economics, 5)[1],
+    calculate_cv_errors(poly3_model1, economics, 5)[1],
+    calculate_cv_errors(poly2_model2, economics, 5)[1],
+    calculate_cv_errors(poly3_model2, economics, 5)[1]
+  ),
+  CV5_RMSE = c(
+    calculate_cv_errors(linear_model1, economics, 5)[2],
+    calculate_cv_errors(linear_model2, economics, 5)[2],
+    calculate_cv_errors(poly2_model1, economics, 5)[2],
+    calculate_cv_errors(poly3_model1, economics, 5)[2],
+    calculate_cv_errors(poly2_model2, economics, 5)[2],
+    calculate_cv_errors(poly3_model2, economics, 5)[2]
+  ),
+  CV10_MSE = c(
+    calculate_cv_errors(linear_model1, economics, 10)[1],
+    calculate_cv_errors(linear_model2, economics, 10)[1],
+    calculate_cv_errors(poly2_model1, economics, 10)[1],
+    calculate_cv_errors(poly3_model1, economics, 10)[1],
+    calculate_cv_errors(poly2_model2, economics, 10)[1],
+    calculate_cv_errors(poly3_model2, economics, 10)[1]
+  ),
+  CV10_RMSE = c(
+    calculate_cv_errors(linear_model1, economics, 10)[2],
+    calculate_cv_errors(linear_model2, economics, 10)[2],
+    calculate_cv_errors(poly2_model1, economics, 10)[2],
+    calculate_cv_errors(poly3_model1, economics, 10)[2],
+    calculate_cv_errors(poly2_model2, economics, 10)[2],
+    calculate_cv_errors(poly3_model2, economics, 10)[2]
+  )
+)
+
+# Combine results
+cv_results <- merge(loocv_results, folds_results, by = "Model")
+
+# Print results
+cat("Cross-Validation Results:\n")
+print(cv_results)
+
+```
+
+## The concepts of Underfitting and Overfitting
+
+ **Underfitting**:
+ Happens when the model is too simple to capture the underlying relationship in the data. 
+- **Example**: Linear models (`unemploy ~ uempmed` and `uempmed ~ unemploy`) underfit the data, as seen in higher residual errors and less flexibility in the graphical fits.
+- **Detection**: High errors in both training and validation datasets during cross-validation.
+
+ **Overfitting**:
+ Happens when the model is too complex, fitting noise rather than the true pattern.
+- **Example**: High-degree polynomial models (e.g., degree 10) show reduced training errors but generalize poorly, resulting in increased validation errors.
+- **Detection**: Large discrepancy between training and cross-validation errors.
+
+ **Cross-Validation to Determine Fit**:
+- **Purpose**: Balances underfitting and overfitting by evaluating model performance on unseen data.
+- **Steps**: 
+  - Apply cross-validation (e.g., LOOCV, k-fold) to compare validation errors.
+  - Select the model with the lowest validation error while avoiding unnecessary complexity.
+
+## Variants of Cross-Validation
+1. **Leave-One-Out Cross-Validation (LOOCV)**:
+   - Splits data such that each observation is used once as the test set.
+   - **Strength**: Provides an unbiased estimate of error.
+   - **Weakness**: Computationally expensive.
+
+2. **k-Fold Cross-Validation**:
+   - Splits data into `k` folds; each fold is used once as the test set.
+   - **Strength**: Reduces computational cost and variance compared to LOOCV.
+   - **Common Choices**: 5-fold and 10-fold.
+
+3. **Repeated k-Fold**:
+   - Repeats k-fold CV multiple times with different splits.
+   - **Strength**: Further reduces variance in error estimates.
+
+4. **Monte Carlo Cross-Validation**:
+   - Repeatedly splits data into random train-test sets.
+   - **Strength**: Suitable for large datasets.
+
