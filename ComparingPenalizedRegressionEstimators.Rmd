@@ -1,0 +1,274 @@
+---
+title: "Comparing penalized regression estimators"
+author: "Mahtab Nahayati"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+```
+
+
+
+# Task1
+
+```{r}
+lasso_shooting <- function(X, y, lambda, tol = 1e-8, max_iter = 1000) {
+  n <- dim(X)[1]
+  p <- dim(X)[2]
+  
+  # Initialize coefficients
+  beta <- rep(0, p)
+  
+  for (iter in 1:max_iter) {
+    beta_old <- beta
+    
+    for (j in 1:p) {
+      # Compute residuals
+      r <- y - X %*% beta + X[, j] * beta[j]
+      
+      # Update coefficient
+      beta[j] <- sign(t(r) %*% X[, j]) * max(0, abs(t(r) %*% X[, j]) - lambda) / sum(X[, j]^2)
+    }
+    
+    # Check for convergence
+    if (sqrt(sum((beta - beta_old)^2)) < tol) {
+      break
+    }
+  }
+  
+  return(list(coefficients = beta))
+}
+
+lasso_path <- function(X, y, lambda_values) {
+  # Initialize empty matrices to store coefficients and lambda values
+  coefs <- matrix(0, ncol = length(lambda_values), nrow = ncol(X))
+  lambdas <- vector(length = length(lambda_values))
+
+  # Compute lasso for each lambda value
+  for (i in 1:length(lambda_values)) {
+    lambda <- lambda_values[i]
+    lasso_results <- lasso_shooting(X, y, lambda)
+    coefs[, i] <- lasso_results$coefficients
+    lambdas[i] <- lambda
+  }
+
+  # Return matrix of coefficients and corresponding lambda values
+  list(coefs = coefs, lambdas = lambdas)
+}
+
+# Load necessary libraries
+library(glmnet)
+library(MASS)
+set.seed(123)
+
+# Simulate data
+n <- 100 
+p <- 10  
+X <- mvrnorm(n, rep(0, p), diag(p)) 
+beta <- runif(p) # true coefficients
+y <- X %*% beta + rnorm(n) # response variable
+
+# Apply lasso function
+lambda_values <- seq(0.1, 2, by = 0.1)
+my_lasso_results <- lapply(lambda_values, function(lambda) lasso_shooting(X, y, lambda))
+
+# Apply glmnet lasso function
+glmnet_lasso_results <- glmnet(X, y, alpha = 1, lambda = lambda_values)
+
+# Compare coefficients
+my_lasso_coefficients <- sapply(my_lasso_results, function(result) result$coefficients)
+glmnet_lasso_coefficients <- as.matrix(coef(glmnet_lasso_results))
+
+# Print coefficients
+print("My Lasso Coefficients:")
+print(my_lasso_coefficients)
+print("GLMNET Lasso Coefficients:")
+print(glmnet_lasso_coefficients)
+```
+```{r}
+cv_lasso <- function(X, y, lambda_seq, nfolds = 10) {
+  n <- dim(X)[1]
+  p <- dim(X)[2]
+  
+  # Initialize matrix to store coefficients
+  beta_mat <- matrix(0, nrow = length(lambda_seq), ncol = p)
+  
+  # Initialize vector to store mean MSE for each lambda
+  mean_mse <- rep(0, length(lambda_seq))
+  
+  # Perform k-fold cross-validation
+  for (i in 1:length(lambda_seq)) {
+    # Define folds
+    folds <- sample(1:nfolds, n, replace = TRUE)
+    
+    # Initialize vector to store MSE for each fold
+    mse <- rep(0, nfolds)
+    
+    for (k in 1:nfolds) {
+      # Split data into training and test sets
+      X_train <- X[folds != k,]
+      y_train <- y[folds != k]
+      X_test <- X[folds == k,]
+      y_test <- y[folds == k]
+      
+      # Fit Lasso on training set
+      beta <- lasso_shooting(X_train, y_train, lambda_seq[i])
+      
+      # Compute MSE on test set
+      mse[k] <- mean((y_test - X_test %*% beta$coefficients)^2)
+    }
+    
+    # Store mean MSE for current lambda
+    mean_mse[i] <- mean(mse)
+    
+    # Store coefficients
+    beta_mat[i,] <- beta$coefficients
+  }
+  
+  return(list(lambda = lambda_seq, mse = mean_mse, beta = beta_mat))
+}
+
+# Define lambda sequence
+lambda_seq <- seq(0.1, 1, length.out = 100)
+
+# Fit Lasso using shooting algorithm
+cv_out <- cv_lasso(X, y, lambda_seq)
+
+# Apply glmnet lasso function
+cv_model <- cv.glmnet(as.matrix(X), y, alpha = 1, nfolds = 10)
+plot(cv_model)
+
+print(paste("Shooting algorithm MSE:", min(cv_out$mse)))
+print(paste("glmnet MSE:", min(cv_model$cvm)))
+
+```
+# Task 2
+
+```{r}
+# Install and load the caret package
+install.packages("caret")
+library(caret)
+
+# Load the Hitters dataset
+data(Hitters, package = "ISLR")
+
+# Remove rows with missing salary values
+Hitters <- na.omit(Hitters)
+
+# Create model matrix
+x <- model.matrix(Salary ~ ., Hitters)[,-1]
+y <- Hitters$Salary
+
+# Split data into training and testing sets
+set.seed(123)
+trainIndex <- createDataPartition(y, p = 0.7, list = FALSE)
+x_train <- x[trainIndex,]
+y_train <- y[trainIndex]
+x_test <- x[-trainIndex,]
+y_test <- y[-trainIndex]
+```
+
+```{r}
+
+library(glmnet)
+
+# Define lambda sequence
+lambda_seq <- 10^seq(10, -2, length.out = 50)
+
+# Fit Lasso using shooting algorithm
+cv_out <- cv_lasso(x_train, y_train, lambda_seq)
+
+# Fit Lasso using glmnet
+fit_glmnet <- cv.glmnet(x_train, y_train, alpha = 1, lambda = lambda_seq)
+
+# Compare results
+print(paste("Shooting algorithm MSE:", min(cv_out$mse)))
+print(paste("glmnet MSE:", min(fit_glmnet$cvm)))
+```
+
+```{r}
+# Fit Ridge regression using glmnet
+fit_ridge <- cv.glmnet(x_train, y_train, alpha = 0, lambda = lambda_seq)
+
+# Fit least squares regression using glmnet (lambda = 0)
+fit_ls <- glmnet(x_train, y_train, alpha = 0, lambda = 0)
+```
+
+
+```{r}
+# Compute predictions for testing data
+pred_lasso <- predict(fit_glmnet, s = fit_glmnet$lambda[which.min(fit_glmnet$cvm)], newx = x_test)
+
+pred_ridge <- predict(fit_ridge, s = fit_ridge$lambda.min, newx = x_test)
+pred_ls <- predict(fit_ls, newx = x_test)
+
+# Compute MSE for testing data
+mse_lasso <- mean((y_test - pred_lasso)^2)
+mse_ridge <- mean((y_test - pred_ridge)^2)
+mse_ls <- mean((y_test - pred_ls)^2)
+
+# Print MSE for testing data
+print(paste("Lasso MSE:", mse_lasso))
+print(paste("Ridge MSE:", mse_ridge))
+print(paste("LS MSE:", mse_ls))
+
+# Plot coefficient paths
+plot(fit_glmnet, xvar = "lambda", label = TRUE)
+```
+The LASSO model has the lowest MSE, indicating it provides the best fit to the testing data.
+The Ridge model has a slightly higher MSE compared to LASSO but still performs better than the least squares model.
+The Least squares model has the highest MSE, indicating it provides the worst fit among th e three models.
+Conclusion: The Lasso regression model is the best choice in this scenario due to its lower MSE and ability to perform variable selection, which can lead to more interpretable models. Ridge regression is a good alternative when we want to retain all predictors in the model. Least squares regression, while simple, is less effective in this context due to its higher MSE and lack of regularization.
+
+
+# Task 3 
+The notion of regularised regression, shrinkage and how Ridge regression and LASSO regression differ.
+
+
+**Regularized regression** is a technique used to prevent overfitting by adding a penalty to the regression model. This penalty discourages the model from fitting the noise in the training data, leading to better generalization on new, unseen data. The two most common forms of regularized regression are Ridge regression and LASSO (Least Absolute Shrinkage and Selection Operator) regression.
+
+**Shrinkage** refers to the process of reducing the magnitude of the regression coefficients. By shrinking the coefficients, the model becomes less sensitive to the variations in the training data, which helps in reducing overfitting. Regularization methods apply shrinkage by adding a penalty term to the loss function that the model tries to minimize.
+
+### Ridge Regression
+
+**Ridge regression**  adds a penalty equal to the sum of the squared coefficients (L2 norm) to the loss function. The objective function for Ridge regression is:
+
+$$
+\text{Minimize} \left( \sum_{i=1}^{n} (y_i - \hat{y}_i)^2 + \lambda \sum_{j=1}^{p} \beta_j^2 \right)
+$$
+
+where:
+- \( y_i \) are the observed values,
+- \( \hat{y}_i \) are the predicted values,
+- \( \beta_j \) are the coefficients,
+- \( \lambda \) is the regularization parameter.
+
+The L2 penalty term \( \lambda \sum_{j=1}^{p} \beta_j^2 \) shrinks the coefficients towards zero but does not set any of them exactly to zero. This means that Ridge regression includes all predictors in the model, but with reduced impact.
+
+### LASSO Regression
+
+**LASSO regression** adds a penalty equal to the sum of the absolute values of the coefficients (L1 norm) to the loss function. The objective function for LASSO regression is:
+
+$$
+\text{Minimize} \left( \sum_{i=1}^{n} (y_i - \hat{y}_i)^2 + \lambda \sum_{j=1}^{p} |\beta_j| \right)
+$$
+
+The L1 penalty term \( \lambda \sum_{j=1}^{p} |\beta_j| \) not only shrinks the coefficients but can also set some of them exactly to zero. This results in a sparse model where only a subset of the predictors are included, making LASSO useful for variable selection.
+
+### Key Differences
+
+1. **Penalty Type**:
+   - **Ridge Regression**: Uses L2 norm (sum of squared coefficients).
+   - **LASSO Regression**: Uses L1 norm (sum of absolute coefficients).
+
+2. **Effect on Coefficients**:
+   - **Ridge Regression**: Shrinks coefficients but does not set any to zero. All predictors remain in the model.
+   - **LASSO Regression**: Can shrink some coefficients to zero, effectively performing variable selection.
+
+3. **Use Cases**:
+   - **Ridge Regression**: Preferred when we believe all predictors have some effect on the response variable and we want to reduce their impact uniformly.
+   - **LASSO Regression**: Preferred when we suspect that only a few predictors are relevant and we want to perform variable selection.
+
